@@ -29,6 +29,8 @@ enum BrowserType: String {
                             return {"", "", "0"}
                         end try
                     end tell
+                else
+                    return {"", "", "0"}
                 end if
             end tell
             """
@@ -46,6 +48,8 @@ enum BrowserType: String {
                             return {"", "", "0"}
                         end try
                     end tell
+                else
+                    return {"", "", "0"}
                 end if
             end tell
             """
@@ -137,10 +141,7 @@ class BrowserTabMonitor {
             if lastAppBundleId != nil {
                 print("切换到: 无前台应用")
                 lastAppBundleId = nil
-            }
-            if lastTabInfo != nil {
-                lastTabInfo = nil
-                delegate?.browserTabMonitor(self, didUpdateTabInfo: nil)
+                clearCurrentState()
             }
             return
         }
@@ -149,10 +150,7 @@ class BrowserTabMonitor {
             if lastAppBundleId != nil {
                 print("切换到: 未知应用")
                 lastAppBundleId = nil
-            }
-            if lastTabInfo != nil {
-                lastTabInfo = nil
-                delegate?.browserTabMonitor(self, didUpdateTabInfo: nil)
+                clearCurrentState()
             }
             return
         }
@@ -176,12 +174,10 @@ class BrowserTabMonitor {
         case BrowserType.edge.bundleIdentifier:
             browserType = .edge
         default:
-            if lastTabInfo != nil {
-                lastTabInfo = nil
-                delegate?.browserTabMonitor(self, didUpdateTabInfo: nil)
-            }
             browserType = nil
-            currentBrowserType = nil
+            if lastAppBundleId != nil {
+                clearCurrentState()
+            }
             return
         }
         
@@ -205,11 +201,21 @@ class BrowserTabMonitor {
         lastCheckTime = currentTime
     }
     
+    private func clearCurrentState() {
+        currentBrowserType = nil
+        lastTabInfo = nil
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.delegate?.browserTabMonitor(self, didUpdateTabInfo: nil)
+        }
+    }
+    
     private func executeAppleScript(for browserType: BrowserType, shouldLog: Bool = true) {
         guard let script = NSAppleScript(source: browserType.appleScript) else {
             if shouldLog {
                 print("创建 AppleScript 失败: \(browserType.rawValue)")
             }
+            clearCurrentState()
             return
         }
         
@@ -218,13 +224,7 @@ class BrowserTabMonitor {
         
         if let error = error {
             print("AppleScript 执行错误 [\(browserType.rawValue)]: \(error)")
-            if lastTabInfo != nil {
-                lastTabInfo = nil
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
-                    self.delegate?.browserTabMonitor(self, didUpdateTabInfo: nil)
-                }
-            }
+            clearCurrentState()
             return
         }
         
@@ -234,6 +234,12 @@ class BrowserTabMonitor {
            let indexStr = resultDescriptor.atIndex(3)?.stringValue,
            let tabIndex = Int(indexStr) {
             
+            // 如果返回的是空值，说明浏览器不在前台或没有活动标签页
+            if title.isEmpty || url.isEmpty || tabIndex <= 0 {
+                clearCurrentState()
+                return
+            }
+            
             let newTabInfo = TabInfo(
                 title: title,
                 url: url,
@@ -241,12 +247,12 @@ class BrowserTabMonitor {
                 tabIndex: tabIndex
             )
             
-            // 只有当标签页信息发生变化时才通知代理
-            if newTabInfo.isValid && (lastTabInfo == nil ||
+            // 只有当标签页信息有效且发生变化时才通知代理
+            if lastTabInfo == nil ||
                 lastTabInfo?.title != newTabInfo.title ||
                 lastTabInfo?.url != newTabInfo.url ||
                 lastTabInfo?.tabIndex != newTabInfo.tabIndex ||
-                lastTabInfo?.browserType != newTabInfo.browserType) {
+                lastTabInfo?.browserType != newTabInfo.browserType {
                 
                 print("[\(browserType.rawValue)] 切换到: \(title)")
                 lastTabInfo = newTabInfo
@@ -256,6 +262,8 @@ class BrowserTabMonitor {
                     self.delegate?.browserTabMonitor(self, didUpdateTabInfo: newTabInfo)
                 }
             }
+        } else {
+            clearCurrentState()
         }
     }
     

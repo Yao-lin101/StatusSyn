@@ -147,8 +147,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
         menu.addItem(currentAppItem)
         
         // 添加浏览器标签页信息项
-        let tabInfoItem = NSMenuItem(title: "浏览器标签页：未监测", action: nil, keyEquivalent: "")
+        let tabInfoItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         tabInfoItem.isEnabled = false
+        tabInfoItem.isHidden = true
         menu.addItem(tabInfoItem)
         
         // 添加分割线
@@ -248,12 +249,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
         if let tabInfo = currentTabInfo {
             let truncatedTitle = tabInfo.title.count > 50 ? tabInfo.title.prefix(47) + "..." : tabInfo.title
             tabItem?.title = "标签页：\(truncatedTitle)"
-            
-            // 设置工具提示显示完整URL
             tabItem?.toolTip = tabInfo.url
+            tabItem?.isHidden = false
         } else {
-            tabItem?.title = "浏览器标签页：未监测"
+            tabItem?.title = ""
             tabItem?.toolTip = nil
+            tabItem?.isHidden = true
         }
     }
 
