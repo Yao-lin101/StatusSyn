@@ -38,13 +38,11 @@ class NetworkService {
         if let tabInfo = tabInfo {
             // 浏览器状态：发送浏览器名称和标签页标题
             let status = "\(tabInfo.browserType.rawValue): \(tabInfo.title)"
-            print("发送浏览器状态更新: \(status)")
             sendStatusRequest(status)
         }
     }
     
     func updateStatus(appName: String) {
-        print("发送应用状态更新: \(appName)")
         sendStatusRequest(appName)
     }
     
@@ -70,7 +68,7 @@ class NetworkService {
                 return
             }
             
-            print("发送状态更新: \(appName)")
+            print("准备发送状态更新: \(appName)")
             
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
