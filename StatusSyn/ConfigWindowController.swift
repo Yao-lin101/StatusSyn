@@ -37,8 +37,8 @@ class ConfigWindowController: NSWindowController {
         editMenuItem.submenu = editMenu
         
         // 添加编辑菜单项
-        editMenu.addItem(withTitle: "撤销", action: Selector("undo:"), keyEquivalent: "z")
-        editMenu.addItem(withTitle: "重做", action: Selector("redo:"), keyEquivalent: "Z")
+        editMenu.addItem(withTitle: "撤销", action: #selector(UndoManager.undo), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "重做", action: #selector(UndoManager.redo), keyEquivalent: "Z")
         editMenu.addItem(NSMenuItem.separator())
         editMenu.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         editMenu.addItem(withTitle: "复制", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
@@ -236,10 +236,10 @@ class CustomTextView: NSTextView {
         if item.action == #selector(NSText.delete(_:)) {
             return self.selectedRange().length > 0 && self.isEditable
         }
-        if item.action == Selector("undo:") {
+        if item.action == #selector(UndoManager.undo) {
             return self.undoManager?.canUndo ?? false
         }
-        if item.action == Selector("redo:") {
+        if item.action == #selector(UndoManager.redo) {
             return self.undoManager?.canRedo ?? false
         }
         return super.validateUserInterfaceItem(item)
