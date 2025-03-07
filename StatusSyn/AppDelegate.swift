@@ -7,16 +7,19 @@
 
 import Cocoa
 
-class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, BrowserTabMonitorDelegate {
 
     private var statusItem: NSStatusItem?
     private var currentAppName: String = "未知应用"
     private var currentAppIcon: NSImage?
     private var workspaceObserver: WorkspaceObserver?
+    private var browserTabMonitor: BrowserTabMonitor?
+    private var currentTabInfo: TabInfo?
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         setupStatusBar()
         setupWorkspaceObserver()
+        setupBrowserTabMonitor()
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {
@@ -143,6 +146,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate {
         currentAppItem.isEnabled = false
         menu.addItem(currentAppItem)
         
+        // 添加浏览器标签页信息项
+        let tabInfoItem = NSMenuItem(title: "浏览器标签页：未监测", action: nil, keyEquivalent: "")
+        tabInfoItem.isEnabled = false
+        menu.addItem(tabInfoItem)
+        
         // 添加分割线
         menu.addItem(NSMenuItem.separator())
         
@@ -163,11 +171,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate {
         workspaceObserver?.delegate = self
     }
     
+    // MARK: - Browser Tab Monitor Setup
+    
+    private func setupBrowserTabMonitor() {
+        browserTabMonitor = BrowserTabMonitor()
+        browserTabMonitor?.delegate = self
+    }
+    
     // MARK: - WorkspaceObserverDelegate
     
     func workspaceObserver(_ observer: WorkspaceObserver, didChangeFrontmostApplication name: String, icon: NSImage?) {
         updateCurrentAppName(name)
         updateStatusBarIcon(icon)
+    }
+    
+    // MARK: - BrowserTabMonitorDelegate
+    
+    func browserTabMonitor(_ monitor: BrowserTabMonitor, didUpdateTabInfo tabInfo: TabInfo?) {
+        currentTabInfo = tabInfo
+        updateMenuItems()
     }
     
     // MARK: - Update Methods
@@ -200,24 +222,38 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate {
     }
     
     private func updateMenuItems() {
-        if let menu = statusItem?.menu {
-            let menuItem = menu.item(at: 0)
-            menuItem?.title = "当前应用：\(currentAppName)"
+        guard let menu = statusItem?.menu else { return }
+        
+        // 更新应用信息
+        let appItem = menu.item(at: 0)
+        appItem?.title = "当前应用：\(currentAppName)"
+        
+        // 更新图标
+        if let icon = currentAppIcon {
+            let menuIconSize = NSSize(width: 16, height: 16)
+            let menuIcon = NSImage(size: menuIconSize)
+            menuIcon.lockFocus()
+            icon.draw(in: NSRect(x: 0, y: 0, width: menuIconSize.width, height: menuIconSize.height),
+                     from: NSRect(x: 0, y: 0, width: icon.size.width, height: icon.size.height),
+                     operation: .sourceOver,
+                     fraction: 1.0)
+            menuIcon.unlockFocus()
+            appItem?.image = menuIcon
+        } else {
+            appItem?.image = nil
+        }
+        
+        // 更新标签页信息
+        let tabItem = menu.item(at: 1)
+        if let tabInfo = currentTabInfo {
+            let truncatedTitle = tabInfo.title.count > 50 ? tabInfo.title.prefix(47) + "..." : tabInfo.title
+            tabItem?.title = "标签页：\(truncatedTitle)"
             
-            // 为菜单项创建一个新的图标副本
-            if let icon = currentAppIcon {
-                let menuIconSize = NSSize(width: 16, height: 16)
-                let menuIcon = NSImage(size: menuIconSize)
-                menuIcon.lockFocus()
-                icon.draw(in: NSRect(x: 0, y: 0, width: menuIconSize.width, height: menuIconSize.height),
-                         from: NSRect(x: 0, y: 0, width: icon.size.width, height: icon.size.height),
-                         operation: .sourceOver,
-                         fraction: 1.0)
-                menuIcon.unlockFocus()
-                menuItem?.image = menuIcon
-            } else {
-                menuItem?.image = nil
-            }
+            // 设置工具提示显示完整URL
+            tabItem?.toolTip = tabInfo.url
+        } else {
+            tabItem?.title = "浏览器标签页：未监测"
+            tabItem?.toolTip = nil
         }
     }
 
