@@ -7,14 +7,16 @@
 
 import Cocoa
 
-@main
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate {
 
+    private var statusItem: NSStatusItem?
+    private var currentAppName: String = "未知应用"
+    private var currentAppIcon: NSImage?
+    private var workspaceObserver: WorkspaceObserver?
     
-
-
     func applicationDidFinishLaunching(_ aNotification: Notification) {
-        // Insert code here to initialize your application
+        setupStatusBar()
+        setupWorkspaceObserver()
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {
@@ -120,6 +122,103 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // If we got here, it is time to quit.
         return .terminateNow
+    }
+
+    // MARK: - Status Bar Setup
+    
+    private func setupStatusBar() {
+        // 创建状态栏项
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        
+        // 设置状态栏图标
+        if let button = statusItem?.button {
+            button.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "StatusSyn")
+        }
+        
+        // 创建菜单
+        let menu = NSMenu()
+        
+        // 添加当前应用信息项
+        let currentAppItem = NSMenuItem(title: "当前应用：\(currentAppName)", action: nil, keyEquivalent: "")
+        currentAppItem.isEnabled = false
+        menu.addItem(currentAppItem)
+        
+        // 添加分割线
+        menu.addItem(NSMenuItem.separator())
+        
+        // 添加退出按钮
+        menu.addItem(NSMenuItem(title: "退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        
+        // 设置菜单
+        statusItem?.menu = menu
+        
+        // 设置初始图标大小
+        updateStatusBarIcon(currentAppIcon)
+    }
+    
+    // MARK: - Workspace Observer Setup
+    
+    private func setupWorkspaceObserver() {
+        workspaceObserver = WorkspaceObserver()
+        workspaceObserver?.delegate = self
+    }
+    
+    // MARK: - WorkspaceObserverDelegate
+    
+    func workspaceObserver(_ observer: WorkspaceObserver, didChangeFrontmostApplication name: String, icon: NSImage?) {
+        updateCurrentAppName(name)
+        updateStatusBarIcon(icon)
+    }
+    
+    // MARK: - Update Methods
+    
+    func updateCurrentAppName(_ name: String) {
+        currentAppName = name
+        updateMenuItems()
+    }
+    
+    private func updateStatusBarIcon(_ icon: NSImage?) {
+        currentAppIcon = icon
+        
+        if let button = statusItem?.button, let icon = icon {
+            // 调整图标大小为16x16
+            let resizedIcon = NSImage(size: NSSize(width: 16, height: 16))
+            resizedIcon.lockFocus()
+            icon.draw(in: NSRect(x: 0, y: 0, width: 16, height: 16),
+                     from: NSRect(x: 0, y: 0, width: icon.size.width, height: icon.size.height),
+                     operation: .sourceOver,
+                     fraction: 1.0)
+            resizedIcon.unlockFocus()
+            
+            button.image = resizedIcon
+        } else if let button = statusItem?.button {
+            // 如果没有图标，使用默认图标
+            button.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "StatusSyn")
+        }
+        
+        updateMenuItems()
+    }
+    
+    private func updateMenuItems() {
+        if let menu = statusItem?.menu {
+            let menuItem = menu.item(at: 0)
+            menuItem?.title = "当前应用：\(currentAppName)"
+            
+            // 为菜单项创建一个新的图标副本
+            if let icon = currentAppIcon {
+                let menuIconSize = NSSize(width: 16, height: 16)
+                let menuIcon = NSImage(size: menuIconSize)
+                menuIcon.lockFocus()
+                icon.draw(in: NSRect(x: 0, y: 0, width: menuIconSize.width, height: menuIconSize.height),
+                         from: NSRect(x: 0, y: 0, width: icon.size.width, height: icon.size.height),
+                         operation: .sourceOver,
+                         fraction: 1.0)
+                menuIcon.unlockFocus()
+                menuItem?.image = menuIcon
+            } else {
+                menuItem?.image = nil
+            }
+        }
     }
 
 }
