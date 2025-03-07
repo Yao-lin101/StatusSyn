@@ -6,6 +6,7 @@
 //
 
 import Cocoa
+import ServiceManagement
 
 class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, BrowserTabMonitorDelegate {
 
@@ -18,6 +19,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
     private var networkService: NetworkService?
     private var isSyncEnabled: Bool = false
     private var lastSyncedStatus: String?
+    private let launchAtLoginKey = "LaunchAtLogin"
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         setupStatusBar()
@@ -163,6 +165,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
         syncMenuItem.state = isSyncEnabled ? .on : .off
         menu.addItem(syncMenuItem)
         
+        // 添加开机启动开关
+        let launchAtLoginItem = NSMenuItem(title: "开机启动", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+        launchAtLoginItem.state = UserDefaults.standard.bool(forKey: launchAtLoginKey) ? .on : .off
+        menu.addItem(launchAtLoginItem)
+        
         // 添加分割线
         menu.addItem(NSMenuItem.separator())
         
@@ -188,6 +195,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
         } else {
             networkService = nil
             lastSyncedStatus = nil
+        }
+    }
+    
+    @objc private func toggleLaunchAtLogin(_ sender: NSMenuItem) {
+        let isEnabled = !UserDefaults.standard.bool(forKey: launchAtLoginKey)
+        UserDefaults.standard.set(isEnabled, forKey: launchAtLoginKey)
+        sender.state = isEnabled ? .on : .off
+        
+        do {
+            if isEnabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+            print("开机启动\(isEnabled ? "开启" : "关闭")成功")
+        } catch {
+            print("开机启动设置失败: \(error.localizedDescription)")
+            // 恢复状态
+            UserDefaults.standard.set(!isEnabled, forKey: launchAtLoginKey)
+            sender.state = !isEnabled ? .on : .off
         }
     }
     
