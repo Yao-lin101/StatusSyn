@@ -105,6 +105,7 @@ class BrowserTabMonitor {
     private var lastTabInfo: TabInfo?
     private var lastCheckTime: TimeInterval = 0
     private let minimumCheckInterval: TimeInterval = 1.0  // 最小检查间隔为1秒
+    private var lastAppBundleId: String?
     
     init() {
         startMonitoring()
@@ -132,8 +133,11 @@ class BrowserTabMonitor {
         }
         
         // 检查当前前台应用是否是受支持的浏览器
-        guard let frontmostApp = NSWorkspace.shared.frontmostApplication,
-              let bundleId = frontmostApp.bundleIdentifier else {
+        guard let frontmostApp = NSWorkspace.shared.frontmostApplication else {
+            if lastAppBundleId != nil {
+                print("切换到: 无前台应用")
+                lastAppBundleId = nil
+            }
             if lastTabInfo != nil {
                 lastTabInfo = nil
                 delegate?.browserTabMonitor(self, didUpdateTabInfo: nil)
@@ -141,7 +145,27 @@ class BrowserTabMonitor {
             return
         }
         
-        print("当前应用 Bundle ID: \(bundleId)")
+        guard let bundleId = frontmostApp.bundleIdentifier else {
+            if lastAppBundleId != nil {
+                print("切换到: 未知应用")
+                lastAppBundleId = nil
+            }
+            if lastTabInfo != nil {
+                lastTabInfo = nil
+                delegate?.browserTabMonitor(self, didUpdateTabInfo: nil)
+            }
+            return
+        }
+        
+        // 如果应用没有变化，不打印日志
+        if bundleId == lastAppBundleId {
+            // 继续检查标签页更新
+        } else {
+            lastAppBundleId = bundleId
+            if let localizedName = frontmostApp.localizedName {
+                print("切换到: \(localizedName)")
+            }
+        }
         
         let browserType: BrowserType?
         switch bundleId {
@@ -152,21 +176,21 @@ class BrowserTabMonitor {
         case BrowserType.edge.bundleIdentifier:
             browserType = .edge
         default:
-            print("未识别的浏览器 Bundle ID: \(bundleId)")
-            browserType = nil
-        }
-        
-        guard let browser = browserType else {
             if lastTabInfo != nil {
                 lastTabInfo = nil
                 delegate?.browserTabMonitor(self, didUpdateTabInfo: nil)
             }
+            browserType = nil
+            currentBrowserType = nil
+            return
+        }
+        
+        guard let browser = browserType else {
             return
         }
         
         // 如果浏览器类型发生变化，更新当前浏览器类型
         if browser != currentBrowserType {
-            print("浏览器切换到: \(browser.rawValue)")
             currentBrowserType = browser
             lastTabInfo = nil
             // 浏览器切换时立即更新
@@ -174,19 +198,18 @@ class BrowserTabMonitor {
         } else {
             // 使用 DispatchQueue 在后台执行 AppleScript
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                self?.executeAppleScript(for: browser)
+                self?.executeAppleScript(for: browser, shouldLog: false)
             }
         }
         
         lastCheckTime = currentTime
     }
     
-    private func executeAppleScript(for browserType: BrowserType) {
-        print("开始执行 AppleScript: \(browserType.rawValue)")
-        print("脚本内容:\n\(browserType.appleScript)")
-        
+    private func executeAppleScript(for browserType: BrowserType, shouldLog: Bool = true) {
         guard let script = NSAppleScript(source: browserType.appleScript) else {
-            print("创建 AppleScript 失败: \(browserType.rawValue)")
+            if shouldLog {
+                print("创建 AppleScript 失败: \(browserType.rawValue)")
+            }
             return
         }
         
@@ -195,7 +218,6 @@ class BrowserTabMonitor {
         
         if let error = error {
             print("AppleScript 执行错误 [\(browserType.rawValue)]: \(error)")
-            print("错误详情: \(error.description)")
             if lastTabInfo != nil {
                 lastTabInfo = nil
                 DispatchQueue.main.async { [weak self] in
@@ -206,15 +228,11 @@ class BrowserTabMonitor {
             return
         }
         
-        print("AppleScript 执行结果: 项目数量 = \(resultDescriptor.numberOfItems)")
-        
         if resultDescriptor.numberOfItems > 0,
            let title = resultDescriptor.atIndex(1)?.stringValue,
            let url = resultDescriptor.atIndex(2)?.stringValue,
            let indexStr = resultDescriptor.atIndex(3)?.stringValue,
            let tabIndex = Int(indexStr) {
-            
-            print("解析结果: title=\(title), url=\(url), index=\(tabIndex)")
             
             let newTabInfo = TabInfo(
                 title: title,
@@ -230,19 +248,13 @@ class BrowserTabMonitor {
                 lastTabInfo?.tabIndex != newTabInfo.tabIndex ||
                 lastTabInfo?.browserType != newTabInfo.browserType) {
                 
-                print("标签页更新 [\(browserType.rawValue)]: \(title)")
+                print("[\(browserType.rawValue)] 切换到: \(title)")
                 lastTabInfo = newTabInfo
                 // 在主线程更新 UI
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
                     self.delegate?.browserTabMonitor(self, didUpdateTabInfo: newTabInfo)
                 }
-            }
-        } else {
-            print("无效的 AppleScript 返回结果 [\(browserType.rawValue)]")
-            print("返回值类型: \(resultDescriptor.descriptorType)")
-            if let stringValue = resultDescriptor.stringValue {
-                print("返回值字符串: \(stringValue)")
             }
         }
     }
