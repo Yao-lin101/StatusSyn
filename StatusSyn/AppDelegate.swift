@@ -15,6 +15,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
     private var workspaceObserver: WorkspaceObserver?
     private var browserTabMonitor: BrowserTabMonitor?
     private var currentTabInfo: TabInfo?
+    private var networkService: NetworkService?
+    private var isSyncEnabled: Bool = false
+    private var lastSyncedStatus: String?
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         setupStatusBar()
@@ -155,6 +158,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
         // 添加分割线
         menu.addItem(NSMenuItem.separator())
         
+        // 添加同步开关
+        let syncMenuItem = NSMenuItem(title: "启用同步", action: #selector(toggleSync), keyEquivalent: "")
+        syncMenuItem.state = isSyncEnabled ? .on : .off
+        menu.addItem(syncMenuItem)
+        
+        // 添加分割线
+        menu.addItem(NSMenuItem.separator())
+        
         // 添加退出按钮
         menu.addItem(NSMenuItem(title: "退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         
@@ -163,6 +174,37 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
         
         // 设置初始图标大小
         updateStatusBarIcon(currentAppIcon)
+    }
+    
+    @objc private func toggleSync(_ sender: NSMenuItem) {
+        isSyncEnabled = !isSyncEnabled
+        sender.state = isSyncEnabled ? .on : .off
+        
+        if isSyncEnabled {
+            networkService = NetworkService()
+            lastSyncedStatus = nil  // 重置上次同步状态
+            // 立即同步当前状态
+            syncCurrentState()
+        } else {
+            networkService = nil
+            lastSyncedStatus = nil
+        }
+    }
+    
+    private func syncCurrentState() {
+        guard isSyncEnabled, let networkService = networkService else { return }
+        
+        var statusText = currentAppName
+        if let tabInfo = currentTabInfo {
+            statusText = "\(tabInfo.browserType.rawValue)\n \(tabInfo.title)"
+        }
+        
+        // 只有当状态发生变化时才发送请求
+        if lastSyncedStatus != statusText {
+            print("状态变更，发送同步请求：\(statusText)")
+            lastSyncedStatus = statusText
+            networkService.updateStatus(appName: statusText)
+        }
     }
     
     // MARK: - Workspace Observer Setup
@@ -184,6 +226,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
     func workspaceObserver(_ observer: WorkspaceObserver, didChangeFrontmostApplication name: String, icon: NSImage?) {
         updateCurrentAppName(name)
         updateStatusBarIcon(icon)
+        syncCurrentState()
     }
     
     // MARK: - BrowserTabMonitorDelegate
@@ -191,6 +234,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
     func browserTabMonitor(_ monitor: BrowserTabMonitor, didUpdateTabInfo tabInfo: TabInfo?) {
         currentTabInfo = tabInfo
         updateMenuItems()
+        syncCurrentState()
     }
     
     // MARK: - Update Methods
