@@ -283,6 +283,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
         browserTabMonitor?.delegate = self
     }
     
+    // MARK: - BrowserTabMonitorDelegate
+    
+    func browserTabMonitor(_ monitor: BrowserTabMonitor, didUpdateTabInfo tabInfo: TabInfo?) {
+        currentTabInfo = tabInfo
+        updateMenuItems()
+        
+        // 如果同步开启，发送状态更新
+        if let syncMenuItem = statusItem?.menu?.items.first(where: { $0.action == #selector(toggleSync) }),
+           syncMenuItem.state == .on {
+            if let tabInfo = tabInfo {
+                // 发送浏览器标签页信息
+                NetworkService.shared.sendTabInfo(tabInfo)
+            } else {
+                // 如果没有标签页信息，发送当前应用名称
+                NetworkService.shared.updateStatus(appName: currentAppName)
+            }
+        }
+    }
+    
     // MARK: - WorkspaceObserverDelegate
     
     func workspaceObserver(_ observer: WorkspaceObserver, didChangeFrontmostApplication name: String, icon: NSImage?) {
@@ -292,20 +311,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
         // 如果同步开启，发送应用状态
         if let syncMenuItem = statusItem?.menu?.items.first(where: { $0.action == #selector(toggleSync) }),
            syncMenuItem.state == .on {
-            NetworkService.shared.updateStatus(appName: name)
-        }
-    }
-    
-    // MARK: - BrowserTabMonitorDelegate
-    
-    func browserTabMonitor(_ monitor: BrowserTabMonitor, didUpdateTabInfo tabInfo: TabInfo?) {
-        currentTabInfo = tabInfo
-        updateMenuItems()
-        
-        // 使用去抖动机制发送状态
-        if let syncMenuItem = statusItem?.menu?.items.first(where: { $0.action == #selector(toggleSync) }),
-           syncMenuItem.state == .on {
-            NetworkService.shared.sendTabInfo(tabInfo)
+            // 如果当前有有效的标签页信息，说明是浏览器，使用标签页信息
+            if let tabInfo = currentTabInfo, tabInfo.isValid {
+                NetworkService.shared.sendTabInfo(tabInfo)
+            } else {
+                // 否则发送普通应用名称
+                NetworkService.shared.updateStatus(appName: name)
+            }
         }
     }
     

@@ -18,8 +18,7 @@ class NetworkService {
     }
     
     private var debounceTimer: Timer?
-    private var pendingTabInfo: TabInfo?
-    private var pendingAppName: String?
+    private var lastSentStatus: String?
     
     private init() {
         // 监听配置变化
@@ -36,75 +35,75 @@ class NetworkService {
     }
     
     func sendTabInfo(_ tabInfo: TabInfo?) {
-        // 取消现有的定时器
-        debounceTimer?.invalidate()
-        
-        // 保存待发送的状态
-        pendingTabInfo = tabInfo
-        pendingAppName = nil
-        
-        // 创建新的定时器，3秒后执行
-        debounceTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
-            if let tabInfo = self?.pendingTabInfo {
-                // 浏览器状态：发送浏览器名称和标签页标题
-                self?.sendStatusRequest("\(tabInfo.browserType.rawValue)\n\(tabInfo.title)")
-            }
+        if let tabInfo = tabInfo {
+            // 浏览器状态：发送浏览器名称和标签页标题
+            let status = "\(tabInfo.browserType.rawValue): \(tabInfo.title)"
+            print("发送浏览器状态更新: \(status)")
+            sendStatusRequest(status)
         }
     }
     
     func updateStatus(appName: String) {
-        // 取消现有的定时器
-        debounceTimer?.invalidate()
-        
-        // 保存待发送的状态
-        pendingTabInfo = nil
-        pendingAppName = appName
-        
-        // 创建新的定时器，3秒后执行
-        debounceTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
-            if let appName = self?.pendingAppName {
-                self?.sendStatusRequest(appName)
-            }
-        }
+        print("发送应用状态更新: \(appName)")
+        sendStatusRequest(appName)
     }
     
     private func sendStatusRequest(_ appName: String) {
-        guard let baseURLString = baseURL, let url = URL(string: baseURLString),
-              let key = characterKey, !key.isEmpty else {
-            print("配置无效，请先完成配置")
+        // 如果状态相同，不发送请求
+        if appName == lastSentStatus {
+            print("状态未变化，跳过请求")
             return
         }
         
-        print("发送状态更新: \(appName)")
+        // 取消现有的定时器
+        debounceTimer?.invalidate()
         
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(key, forHTTPHeaderField: "X-Character-Key")
-        
-        let payload: [String: Any] = [
-            "type": "mac",
-            "data": [
-                "mac": appName
-            ]
-        ]
-        
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        // 创建新的定时器，3秒后执行
+        debounceTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
             
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                if let error = error {
-                    print("网络请求错误: \(error.localizedDescription)")
-                    return
-                }
-                
-                if let httpResponse = response as? HTTPURLResponse {
-                    print("状态更新响应码: \(httpResponse.statusCode)")
-                }
+            guard let baseURLString = self.baseURL,
+                  let url = URL(string: baseURLString),
+                  let key = self.characterKey,
+                  !key.isEmpty else {
+                print("配置无效，请先完成配置")
+                return
             }
-            task.resume()
-        } catch {
-            print("创建请求数据失败: \(error.localizedDescription)")
+            
+            print("发送状态更新: \(appName)")
+            
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(key, forHTTPHeaderField: "X-Character-Key")
+            
+            let payload: [String: Any] = [
+                "type": "mac",
+                "data": [
+                    "mac": appName
+                ]
+            ]
+            
+            do {
+                request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+                
+                let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+                    if let error = error {
+                        print("网络请求错误: \(error.localizedDescription)")
+                        return
+                    }
+                    
+                    if let httpResponse = response as? HTTPURLResponse {
+                        print("状态更新响应码: \(httpResponse.statusCode)")
+                        if httpResponse.statusCode == 200 {
+                            self?.lastSentStatus = appName
+                        }
+                    }
+                }
+                task.resume()
+            } catch {
+                print("创建请求数据失败: \(error.localizedDescription)")
+            }
         }
     }
 } 

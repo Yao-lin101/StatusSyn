@@ -110,8 +110,6 @@ class BrowserTabMonitor {
     private var lastCheckTime: TimeInterval = 0
     private let minimumCheckInterval: TimeInterval = 1.0  // 最小检查间隔为1秒
     private var lastAppBundleId: String?
-    private var debounceTimer: Timer?
-    private var pendingTabInfo: TabInfo?
     
     init() {
         startMonitoring()
@@ -159,7 +157,12 @@ class BrowserTabMonitor {
         
         // 如果应用没有变化，不打印日志
         if bundleId == lastAppBundleId {
-            // 继续检查标签页更新
+            // 如果当前是浏览器，继续检查标签页更新
+            if currentBrowserType != nil {
+                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                    self?.executeAppleScript(for: self?.currentBrowserType ?? .edge)
+                }
+            }
         } else {
             lastAppBundleId = bundleId
             if let localizedName = frontmostApp.localizedName {
@@ -177,7 +180,7 @@ class BrowserTabMonitor {
             browserType = .edge
         default:
             browserType = nil
-            if lastAppBundleId != nil {
+            if currentBrowserType != nil {
                 clearCurrentState()
             }
             return
@@ -193,29 +196,14 @@ class BrowserTabMonitor {
             lastTabInfo = nil
             // 浏览器切换时立即更新
             executeAppleScript(for: browser)
-        } else {
-            // 使用 DispatchQueue 在后台执行 AppleScript
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                self?.executeAppleScript(for: browser, shouldLog: false)
-            }
         }
         
         lastCheckTime = currentTime
     }
     
     private func notifyDelegate(with tabInfo: TabInfo?) {
-        // 取消现有的定时器
-        debounceTimer?.invalidate()
-        
-        // 保存待发送的状态
-        pendingTabInfo = tabInfo
-        
-        // 创建新的定时器，1秒后执行
-        debounceTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { [weak self] _ in
-            guard let self = self else { return }
-            DispatchQueue.main.async {
-                self.delegate?.browserTabMonitor(self, didUpdateTabInfo: self.pendingTabInfo)
-            }
+        DispatchQueue.main.async {
+            self.delegate?.browserTabMonitor(self, didUpdateTabInfo: tabInfo)
         }
     }
     
@@ -262,13 +250,18 @@ class BrowserTabMonitor {
                 tabIndex: tabIndex
             )
             
-            // 只有当标签页信息有效且发生变化时才通知代理
-            if newTabInfo.isValid && (lastTabInfo?.title != newTabInfo.title || 
-                                    lastTabInfo?.url != newTabInfo.url ||
-                                    lastTabInfo?.browserType != newTabInfo.browserType ||
-                                    lastTabInfo?.tabIndex != newTabInfo.tabIndex) {
-                lastTabInfo = newTabInfo
-                notifyDelegate(with: newTabInfo)
+            // 只要标签页信息有效就更新并通知
+            if newTabInfo.isValid {
+                // 检查标签页是否发生变化
+                if lastTabInfo?.title != newTabInfo.title || lastTabInfo?.url != newTabInfo.url {
+                    if shouldLog {
+                        print("获取到标签页信息：[\(browserType.rawValue)] \(title)")
+                    }
+                    lastTabInfo = newTabInfo
+                    notifyDelegate(with: newTabInfo)
+                }
+            } else {
+                clearCurrentState()
             }
         } else {
             clearCurrentState()
