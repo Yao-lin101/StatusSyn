@@ -194,33 +194,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
     }
     
     @objc private func toggleSync(_ sender: NSMenuItem) {
-        // 检查配置是否有效
-        guard NetworkService.isConfigured else {
+        if !NetworkService.shared.isConfigured {
             let alert = NSAlert()
-            alert.messageText = "无法启用同步"
-            alert.informativeText = "请先完成配置设置"
+            alert.messageText = "未配置"
+            alert.informativeText = "请先完成配置再开启同步"
             alert.alertStyle = .warning
             alert.addButton(withTitle: "确定")
             alert.addButton(withTitle: "去配置")
             
-            // 直接使用 runModal
-            if alert.runModal() == .alertSecondButtonReturn {
-                self.showConfig()
+            let response = alert.runModal()
+            if response == .alertSecondButtonReturn {
+                showConfig()
             }
             return
         }
         
-        isSyncEnabled = !isSyncEnabled
-        sender.state = isSyncEnabled ? .on : .off
+        sender.state = sender.state == .on ? .off : .on
         
-        if isSyncEnabled {
-            networkService = NetworkService()
-            lastSyncedStatus = nil  // 重置上次同步状态
-            // 立即同步当前状态
-            syncCurrentState()
-        } else {
-            networkService = nil
-            lastSyncedStatus = nil
+        // 如果开启同步，立即发送当前状态
+        if sender.state == .on {
+            NetworkService.shared.sendTabInfo(currentTabInfo)
         }
     }
     
@@ -256,7 +249,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
     private func updateSyncMenuItemState() {
         guard let menu = statusItem?.menu else { return }
         if let syncMenuItem = menu.items.first(where: { $0.action == #selector(toggleSync) }) {
-            let isConfigured = NetworkService.isConfigured
+            let isConfigured = NetworkService.shared.isConfigured
             syncMenuItem.isEnabled = isConfigured
             
             if !isConfigured {
@@ -270,19 +263,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
     }
     
     private func syncCurrentState() {
-        guard isSyncEnabled, let networkService = networkService else { return }
+        guard let syncMenuItem = statusItem?.menu?.items.first(where: { $0.action == #selector(toggleSync) }),
+              syncMenuItem.state == .on else { return }
         
-        var statusText = currentAppName
-        if let tabInfo = currentTabInfo {
-            statusText = "\(tabInfo.browserType.rawValue)\n \(tabInfo.title)"
-        }
-        
-        // 只有当状态发生变化时才发送请求
-        if lastSyncedStatus != statusText {
-            print("状态变更，发送同步请求：\(statusText)")
-            lastSyncedStatus = statusText
-            networkService.updateStatus(appName: statusText)
-        }
+        NetworkService.shared.sendTabInfo(currentTabInfo)
     }
     
     // MARK: - Workspace Observer Setup
@@ -304,7 +288,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
     func workspaceObserver(_ observer: WorkspaceObserver, didChangeFrontmostApplication name: String, icon: NSImage?) {
         updateCurrentAppName(name)
         updateStatusBarIcon(icon)
-        syncCurrentState()
+        
+        // 如果同步开启，发送应用状态
+        if let syncMenuItem = statusItem?.menu?.items.first(where: { $0.action == #selector(toggleSync) }),
+           syncMenuItem.state == .on {
+            NetworkService.shared.updateStatus(appName: name)
+        }
     }
     
     // MARK: - BrowserTabMonitorDelegate
@@ -312,7 +301,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
     func browserTabMonitor(_ monitor: BrowserTabMonitor, didUpdateTabInfo tabInfo: TabInfo?) {
         currentTabInfo = tabInfo
         updateMenuItems()
-        syncCurrentState()
+        
+        // 使用去抖动机制发送状态
+        if let syncMenuItem = statusItem?.menu?.items.first(where: { $0.action == #selector(toggleSync) }),
+           syncMenuItem.state == .on {
+            NetworkService.shared.sendTabInfo(tabInfo)
+        }
     }
     
     // MARK: - Update Methods

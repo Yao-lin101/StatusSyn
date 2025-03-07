@@ -110,6 +110,8 @@ class BrowserTabMonitor {
     private var lastCheckTime: TimeInterval = 0
     private let minimumCheckInterval: TimeInterval = 1.0  // 最小检查间隔为1秒
     private var lastAppBundleId: String?
+    private var debounceTimer: Timer?
+    private var pendingTabInfo: TabInfo?
     
     init() {
         startMonitoring()
@@ -201,13 +203,26 @@ class BrowserTabMonitor {
         lastCheckTime = currentTime
     }
     
+    private func notifyDelegate(with tabInfo: TabInfo?) {
+        // 取消现有的定时器
+        debounceTimer?.invalidate()
+        
+        // 保存待发送的状态
+        pendingTabInfo = tabInfo
+        
+        // 创建新的定时器，1秒后执行
+        debounceTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
+            DispatchQueue.main.async {
+                self.delegate?.browserTabMonitor(self, didUpdateTabInfo: self.pendingTabInfo)
+            }
+        }
+    }
+    
     private func clearCurrentState() {
         currentBrowserType = nil
         lastTabInfo = nil
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.delegate?.browserTabMonitor(self, didUpdateTabInfo: nil)
-        }
+        notifyDelegate(with: nil)
     }
     
     private func executeAppleScript(for browserType: BrowserType, shouldLog: Bool = true) {
@@ -248,19 +263,12 @@ class BrowserTabMonitor {
             )
             
             // 只有当标签页信息有效且发生变化时才通知代理
-            if lastTabInfo == nil ||
-                lastTabInfo?.title != newTabInfo.title ||
-                lastTabInfo?.url != newTabInfo.url ||
-                lastTabInfo?.tabIndex != newTabInfo.tabIndex ||
-                lastTabInfo?.browserType != newTabInfo.browserType {
-                
-                print("[\(browserType.rawValue)] 切换到: \(title)")
+            if newTabInfo.isValid && (lastTabInfo?.title != newTabInfo.title || 
+                                    lastTabInfo?.url != newTabInfo.url ||
+                                    lastTabInfo?.browserType != newTabInfo.browserType ||
+                                    lastTabInfo?.tabIndex != newTabInfo.tabIndex) {
                 lastTabInfo = newTabInfo
-                // 在主线程更新 UI
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
-                    self.delegate?.browserTabMonitor(self, didUpdateTabInfo: newTabInfo)
-                }
+                notifyDelegate(with: newTabInfo)
             }
         } else {
             clearCurrentState()

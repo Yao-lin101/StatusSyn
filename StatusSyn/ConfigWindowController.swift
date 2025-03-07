@@ -143,28 +143,25 @@ class ConfigWindowController: NSWindowController {
         saveButton.isEnabled = !(baseURLField.string.isEmpty) && !(characterKeyField.string.isEmpty)
     }
     
-    @objc private func saveConfig() {
-        guard !(baseURLField.string.isEmpty) && !(characterKeyField.string.isEmpty) else {
-            let alert = NSAlert()
-            alert.messageText = "配置无效"
-            alert.informativeText = "请填写所有必要的配置信息"
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "确定")
-            alert.beginSheetModal(for: window!) { _ in }
+    @IBAction func saveConfig(_ sender: Any) {
+        let baseURL = baseURLField.string
+        let characterKey = characterKeyField.string
+        
+        guard !baseURL.isEmpty && !characterKey.isEmpty else {
             return
         }
         
-        // 保存配置
-        UserDefaults.standard.set(baseURLField.string, forKey: "baseURL")
-        UserDefaults.standard.set(characterKeyField.string, forKey: "characterKey")
+        // 保存到 UserDefaults
+        UserDefaults.standard.set(baseURL, forKey: "baseURL")
+        UserDefaults.standard.set(characterKey, forKey: "characterKey")
         
-        // 发送配置更新通知
+        // 发送配置更改通知
         NotificationCenter.default.post(name: .configDidChange, object: nil)
         
         window?.close()
     }
     
-    @objc private func cancelConfig() {
+    @IBAction func cancelConfig(_ sender: Any) {
         window?.close()
     }
 }
