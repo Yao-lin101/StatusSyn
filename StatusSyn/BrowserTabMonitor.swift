@@ -253,7 +253,11 @@ class BrowserTabMonitor {
             // 只要标签页信息有效就更新并通知
             if newTabInfo.isValid {
                 // 检查标签页是否发生变化
-                if lastTabInfo?.title != newTabInfo.title || lastTabInfo?.url != newTabInfo.url {
+                let hasChanged = lastTabInfo?.title != newTabInfo.title || 
+                               lastTabInfo?.url != newTabInfo.url ||
+                               lastTabInfo?.browserType != newTabInfo.browserType
+                
+                if hasChanged {
                     if shouldLog {
                         print("获取到标签页信息：[\(browserType.rawValue)] \(title)")
                     }
