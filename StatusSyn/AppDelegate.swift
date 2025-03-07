@@ -25,6 +25,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
         setupStatusBar()
         setupWorkspaceObserver()
         setupBrowserTabMonitor()
+        
+        // 监听配置变化
+        NotificationCenter.default.addObserver(self, selector: #selector(configDidChange), name: .configDidChange, object: nil)
+        
+        // 初始化时检查配置状态
+        updateSyncMenuItemState()
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {
@@ -170,6 +176,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
         launchAtLoginItem.state = UserDefaults.standard.bool(forKey: launchAtLoginKey) ? .on : .off
         menu.addItem(launchAtLoginItem)
         
+        // 添加配置选项
+        let configItem = NSMenuItem(title: "配置", action: #selector(showConfig), keyEquivalent: ",")
+        menu.addItem(configItem)
+        
         // 添加分割线
         menu.addItem(NSMenuItem.separator())
         
@@ -184,6 +194,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
     }
     
     @objc private func toggleSync(_ sender: NSMenuItem) {
+        // 检查配置是否有效
+        guard NetworkService.isConfigured else {
+            let alert = NSAlert()
+            alert.messageText = "无法启用同步"
+            alert.informativeText = "请先完成配置设置"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "确定")
+            alert.addButton(withTitle: "去配置")
+            
+            // 直接使用 runModal
+            if alert.runModal() == .alertSecondButtonReturn {
+                self.showConfig()
+            }
+            return
+        }
+        
         isSyncEnabled = !isSyncEnabled
         sender.state = isSyncEnabled ? .on : .off
         
@@ -215,6 +241,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, WorkspaceObserverDelegate, B
             // 恢复状态
             UserDefaults.standard.set(!isEnabled, forKey: launchAtLoginKey)
             sender.state = !isEnabled ? .on : .off
+        }
+    }
+    
+    @objc private func showConfig() {
+        ConfigWindowController.shared.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+    
+    @objc private func configDidChange() {
+        updateSyncMenuItemState()
+    }
+    
+    private func updateSyncMenuItemState() {
+        guard let menu = statusItem?.menu else { return }
+        if let syncMenuItem = menu.items.first(where: { $0.action == #selector(toggleSync) }) {
+            let isConfigured = NetworkService.isConfigured
+            syncMenuItem.isEnabled = isConfigured
+            
+            if !isConfigured {
+                // 如果配置无效，关闭同步
+                isSyncEnabled = false
+                syncMenuItem.state = .off
+                networkService = nil
+                lastSyncedStatus = nil
+            }
         }
     }
     

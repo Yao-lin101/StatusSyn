@@ -1,14 +1,44 @@
 import Foundation
 
 class NetworkService {
-    private let baseURL = "https://alive.ineed.asia/api/v1/status/update/"
-    private let characterKey = "82d896e0-8173-4e13-a852-43e5698c7142"
+    private var baseURL: String? {
+        return UserDefaults.standard.string(forKey: "baseURL")
+    }
+    
+    private var characterKey: String? {
+        return UserDefaults.standard.string(forKey: "characterKey")
+    }
+    
+    static var isConfigured: Bool {
+        let baseURL = UserDefaults.standard.string(forKey: "baseURL")
+        let characterKey = UserDefaults.standard.string(forKey: "characterKey")
+        return !(baseURL?.isEmpty ?? true) && !(characterKey?.isEmpty ?? true)
+    }
+    
+    init() {
+        // 监听配置变化
+        NotificationCenter.default.addObserver(self, selector: #selector(configDidChange), name: .configDidChange, object: nil)
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+    
+    @objc private func configDidChange() {
+        print("配置已更新")
+    }
     
     func updateStatus(appName: String) {
-        var request = URLRequest(url: URL(string: baseURL)!)
+        guard let baseURLString = baseURL, let url = URL(string: baseURLString),
+              let key = characterKey, !key.isEmpty else {
+            print("配置无效，请先完成配置")
+            return
+        }
+        
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(characterKey, forHTTPHeaderField: "X-Character-Key")
+        request.setValue(key, forHTTPHeaderField: "X-Character-Key")
         
         let payload: [String: Any] = [
             "type": "mac",
